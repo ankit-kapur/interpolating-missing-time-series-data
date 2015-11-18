@@ -1,0 +1,1 @@
+In order to perform clustering on CKD (Chronic kidney disease) data and identify patients with similar disease trajectories, we need to find a way to interpolate the missing eGFR data (which is a measure of the severity of the disease), and then perform clustering.
