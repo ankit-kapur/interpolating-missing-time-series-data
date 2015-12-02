@@ -1,0 +1,4 @@
+hadoop fs -mkdir /usr
+hadoop fs -mkdir /usr/hive
+hadoop fs -mkdir /usr/hive/warehouse
+hadoop fs -chmod g+w /usr/hive/warehouse

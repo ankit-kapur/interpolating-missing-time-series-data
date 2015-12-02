@@ -1,0 +1,102 @@
+#!/bin/bash
+
+#export DATA_PATH=./veryverysmall/
+#export DATA_PATH=/gpfs/courses/cse587/spring2015/data/hw3/data
+export DATA_PATH=/gpfs/courses/cse587/spring2015/data/hw1/medium
+#export DATA_PATH=/gpfs/courses/cse587/spring2015/data/hw1/large
+
+export OUTPUT_DIRECTORY=./out_me4
+#SBATCH --job-name="pig_me4"
+#SBATCH --nodes=4
+
+#SBATCH --partition=general-compute
+#SBATCH --time=39:59:00
+#SBATCH --ntasks-per-node=12
+##SBATCH --constraint=CPU-L5520
+#SBATCH --exclusive
+##SBATCH --mem=24000
+##SBATCH --mem-per-cpu=4000
+#SBATCH --output=log-%J.out
+#SBATCH --mail-user=ankitkap@buffalo.edu
+#SBATCH --mail-type=END
+##SBATCH --requeue
+#Specifies that the job will be requeued after a node failure.
+#The default is that the job will not be requeued.
+#
+#This SLURM script is modified version of the SDSC script
+# found in /util/academic/myhadoop/myHadoop-0.30b/examples.
+# CDC January 29, 2015
+#
+echo "SLURM_JOBID="$SLURM_JOBID
+echo "SLURM_JOB_NODELIST"=$SLURM_JOB_NODELIST
+echo "SLURM_NNODES"=$SLURM_NNODES
+echo "SLURMTMPDIR="$SLURMTMPDIR
+
+echo "working directory = "$SLURM_SUBMIT_DIR
+
+module load java/1.7.0_25
+module load hadoop/2.5.1_java-1.7
+module load myhadoop/0.30b
+module load pig/0.14.0
+module list
+echo "MH_HOME="$MH_HOME
+echo "HADOOP_HOME="$HADOOP_HOME
+echo "Setting HADOOP to use SLURMTMPDIR on the local disk"
+export MH_SCRATCH_DIR=$SLURMTMPDIR
+echo "MH_SCRATCH_DIR="$MH_SCRATCH_DIR
+#### Set this to the directory where Hadoop configs should be generated
+# Don't change the name of this variable (HADOOP_CONF_DIR) as it is
+# required by Hadoop - all config files will be picked up from here
+#
+# Make sure that this is accessible to all nodes
+export HADOOP_CONF_DIR=$SLURM_SUBMIT_DIR/config-$SLURM_JOBID
+export PIG_CONF_DIR=$SLURM_SUBMIT_DIR/config-$SLURM_JOBID
+echo "create directory for PIG log"
+mkdir pig-log-$SLURM_JOBID
+export PIG_LOG_DIR=$SLURM_SUBMIT_DIR/pig-log-$SLURM_JOBID
+echo "PIG_LOG_DIR="$PIG_LOG_DIR
+export PIG_CLASSPATH=$PIG_CONF_DIR
+### Set up the configuration
+# Make sure number of nodes is the same as what you have requested from PBS
+# usage: $myhadoop-configure.sh -h
+# this is the non-persistent mode
+NPROCS=`srun --nodes=${SLURM_NNODES} bash -c 'hostname' |wc -l`
+echo "-------Set up the configurations for myHadoop"
+$MH_HOME/bin/myhadoop-configure.sh 
+#
+cp $PIG_HOME/conf/pig.properties-sample $PIG_CONF_DIR/pig.properties
+sed -i 's:MY_PIG_LOG_DIR:'"$PIG_LOG_DIR"':' $PIG_CONF_DIR/pig.properties
+sed -i 's:MY_PIG_CACHE:'"$PIG_LOG_DIR"':' $PIG_CONF_DIR/pig.properties
+ls -l $HADOOP_CONF_DIR
+echo "-------Start hdfs and yarn ---"
+$HADOOP_HOME/sbin/start-all.sh
+$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh start historyserver --config $HADOOP_CONF_DIR
+#### Format HDFS, if this is the first time or not a persistent instance
+echo "-------Show Report ---"
+#$HADOOP_HOME/bin/hadoop dfsadmin -report
+echo "-------make directory ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -mkdir /pigdata
+echo "-------list directory ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /pigdata
+echo "-------copy file to hdfs ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -put $DATA_PATH /pigdata/
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /pigdata
+
+echo "run pig with script"
+pig -x mapreduce ankit.pig
+
+echo "-------list directory ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /pigdata
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /pigdata/out_folder
+echo "-------Get outout ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -get /pigdata/out_folder $OUTPUT_DIRECTORY
+$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh stop historyserver --config $HADOOP_CONF_DIR
+
+echo "-------Stop hdfs and yarn ---"
+$HADOOP_HOME/sbin/stop-all.sh
+
+#### Clean up the working directories after job completion
+$MH_HOME/bin/myhadoop-cleanup.sh
+
