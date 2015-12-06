@@ -1,0 +1,98 @@
+#!/bin/bash
+
+export DATA_PATH=/gpfs/scratch/ankitkap/ckd_datasets
+
+export OUTPUT_FILE_NAME=output_hive.csv
+#SBATCH --job-name="hive_ank_4"
+#SBATCH --nodes=4
+
+#SBATCH --partition=general-compute
+#SBATCH --time=00:59:00
+#SBATCH --ntasks-per-node=12
+#SBATCH --exclusive
+#SBATCH --output=test-%J.out
+#SBATCH --mail-type=END
+#SBATCH --mail-user=ankitkap@buffalo.edu
+#Specifies that the job will be requeued after a node failure.
+#The default is that the job will not be requeued.
+#
+#This SLURM script is modified version of the SDSC script
+# found in /util/academic/myhadoop/myHadoop-0.30b/examples.
+# CDC January 29, 2015
+#
+echo "SLURM_JOBID="$SLURM_JOBID
+echo "SLURM_JOB_NODELIST"=$SLURM_JOB_NODELIST
+echo "SLURM_NNODES"=$SLURM_NNODES
+echo "SLURMTMPDIR="$SLURMTMPDIR
+
+echo "working directory = "$SLURM_SUBMIT_DIR
+
+module load java/1.6.0_22
+module load hadoop/2.5.1
+module load hive/0.14.0
+module load myhadoop/0.30b
+module list
+echo "MH_HOME="$MH_HOME
+echo "HADOOP_HOME="$HADOOP_HOME
+echo "Setting HADOOP to use SLURMTMPDIR on the local disk"
+export MH_SCRATCH_DIR=$SLURMTMPDIR
+echo "MH_SCRATCH_DIR="$MH_SCRATCH_DIR
+#### Set this to the directory where Hadoop configs should be generated
+# Don't change the name of this variable (HADOOP_CONF_DIR) as it is
+# required by Hadoop - all config files will be picked up from here
+#
+# Make sure that this is accessible to all nodes
+export SCRATCH_DIR=/gpfs/scratch/ankitkap/configs-hive
+export HADOOP_CONF_DIR=$SCRATCH_DIR/config-$SLURM_JOBID
+export HIVE_CONF_DIR=$SCRATCH_DIR/config-$SLURM_JOBID
+
+echo "create diretory for HIVE metadata"
+### Set up the configuration
+# Make sure number of nodes is the same as what you have requested from PBS
+# usage: $myhadoop-configure.sh -h
+# this is the non-persistent mode
+NPROCS=`srun --nodes=${SLURM_NNODES} bash -c 'hostname' |wc -l`
+echo "-------Set up the configurations for myHadoop"
+$MH_HOME/bin/myhadoop-configure.sh 
+#
+echo "HIVEHOME"
+echo $HIVE_HOME
+
+cp $HIVE_HOME/conf/hive-env.sh.sample $HIVE_CONF_DIR/hive-env.sh
+cp $HIVE_HOME/conf/hive-default.xml-sample $HIVE_CONF_DIR/hive-default.xml
+sed -i 's:MY_HIVE_SCRATCH:'"$SLURMTMPDIR"':g' $HIVE_CONF_DIR/hive-default.xml
+cp $HIVE_HOME/conf/hive-log4j.properties-sample $HIVE_CONF_DIR/hive-log4j.properties
+sed -i 's:MY_HIVE_DIR:'"$SLURM_SUBMIT_DIR"':' $HIVE_CONF_DIR/hive-log4j.properties
+ls -l $HADOOP_CONF_DIR
+echo "-------Start hdfs and yarn ---"
+$HADOOP_HOME/sbin/start-all.sh
+#### Format HDFS, if this is the first time or not a persistent instance
+echo "-------Show Report ---"
+#$HADOOP_HOME/bin/hadoop dfsadmin -report
+echo "-------make directory ---"
+# DON'T CHANGE THSES COMMAND, AS YOU WILL NEED THESE DIRECTORY FOR CREATING TABLE
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -mkdir /tmp
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -mkdir -p /user/hive/warehouse
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -chmod g+w /tmp
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -chmod g+w /user/hive/warehouse
+#echo "-------list warehouse directory ---"
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -ls /user/hive/warehouse
+
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -mkdir /hivedata
+$HADOOP_HOME/bin/hdfs --config $HADOOP_CONF_DIR dfs -put $DATA_PATH/*.csv /hivedata
+
+startTime=$(date + "%s");
+echo "Running ankit's SQL script"
+$HIVE_HOME/bin/hive -f make_featurematrix.sql
+$HIVE_HOME/bin/hive -e "select * from tab_final;" > $OUTPUT_FILE_NAME
+
+endTime=$(date +"%s")
+timeTaken=$(($endTime-$startTime))
+echo Time in secondssssss ==> $timeTaken
+echo Time taken ==> $(($timeTaken / 60)) minutes, $(($timeTaken % 60)) seconds.
+
+echo "-------Stop hdfs and yarn ---"
+$HADOOP_HOME/sbin/stop-all.sh
+
+#### Clean up the working directories after job completion
+$MH_HOME/bin/myhadoop-cleanup.sh
