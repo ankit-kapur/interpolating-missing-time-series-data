@@ -69,6 +69,18 @@ where t1.idperson=t2.idperson and t1.rDate=t2.rDate and t1.idperson=t3.idperson 
 and t1.idperson=t4.idperson;
 
 
-select * from tab_final LIMIT 10;
+--joining the three tables and generating the final result
+drop table if exists tab_final;
+CREATE TABLE tab_final as
+select t1.idperson,t1.rDate,t1.gender,t1.year,t1.age, t4.smokercategory, t4.smokerdetail,
+t2.testName as lab_test,t2.rVal as lab_test_val,
+t3.rVal as bps, 
+t1.gfrStan
+from tab_gfr t1, tab_lab t2, tab_finding t3, tab_history_social t4
+where t1.idperson=t2.idperson and t1.rDate=t2.rDate and t1.idperson=t3.idperson and t1.rDate=t3.rDate
+and t1.idperson=t4.idperson;
+
+
+-- select * from tab_final LIMIT 10;
 --run this from the terminal
 -- hive -e 'select * from tab_final' > /home/castamere/code/independent/outputs/hive_results.csv
